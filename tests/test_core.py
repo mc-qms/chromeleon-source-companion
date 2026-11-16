@@ -90,6 +90,38 @@ def test_version_mismatch_is_flagged():
                for g in packet.gaps), packet.gaps
 
 
+def test_gibberish_gets_weak_support_gap():
+    # Regression: chunk scoring once gave a question-independent keyword
+    # bonus, so even gibberish produced a "supported" packet and the
+    # weak-support tripwire never fired.
+    packet = core.build_packet(
+        "asdf qwer zxcv", "General question", "7.3.2",
+        page_provider=fake_provider)
+    assert any("weak" in g.lower() for g in packet.gaps), packet.gaps
+
+
+def test_citation_comma_style_is_accepted():
+    packet = core.build_packet(
+        "What does Chromeleon specify for electronic signatures?",
+        "Audit trail / data integrity", "7.3.2",
+        page_provider=fake_provider)
+    label = packet.source_labels["functional_spec_732"]
+    warnings = core.validate_answer(
+        f"Per the spec [{label}, p. 12] it does X.", packet)
+    assert warnings == [], warnings
+
+
+def test_install_guide_not_claimed_for_74():
+    # The Installation Guide is Rev. 2.2 (Nov 2021); the registry must not
+    # claim it covers 7.4.
+    packet = core.build_packet(
+        "How do I install Chromeleon and configure Windows?",
+        "Install / upgrade / configure", "7.4",
+        page_provider=fake_provider)
+    assert any("does not cover the selected version 7.4" in g
+               for g in packet.gaps), packet.gaps
+
+
 if __name__ == "__main__":
     test_install_question_picks_install_guide()
     test_audit_question_picks_functional_spec()
@@ -97,4 +129,7 @@ if __name__ == "__main__":
     test_packet_builds_items_and_labels()
     test_validate_answer_flags_unknown_labels()
     test_version_mismatch_is_flagged()
+    test_gibberish_gets_weak_support_gap()
+    test_citation_comma_style_is_accepted()
+    test_install_guide_not_claimed_for_74()
     print("all core tests passed")

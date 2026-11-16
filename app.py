@@ -40,20 +40,25 @@ def get_secret(name: str, default: str = "") -> str:
 def cached_fetch(source_id: str, max_pages: int | None) -> dict:
     source = core.SOURCE_BY_ID[source_id]
     result = core.fetch_source(source, max_pages=max_pages)
+    if not result.ok:
+        # Streamlit does not cache exceptions — raising here keeps a
+        # transient fetch failure from being cached for the full TTL.
+        raise RuntimeError(result.error)
     return {
-        "ok": result.ok,
-        "error": result.error,
         "byte_count": result.byte_count,
         "pages": [{"page": p.page, "text": p.text} for p in result.pages],
     }
 
 
 def app_page_provider(source: core.Source, max_pages: int | None) -> core.FetchResult:
-    data = cached_fetch(source.id, max_pages)
+    try:
+        data = cached_fetch(source.id, max_pages)
+    except RuntimeError as exc:
+        return core.FetchResult(source=source, ok=False, error=str(exc))
     pages = [core.PageText(page=p["page"], text=p["text"]) for p in data["pages"]]
     return core.FetchResult(
-        source=source, ok=data["ok"], pages=pages,
-        error=data["error"], byte_count=data["byte_count"],
+        source=source, ok=True, pages=pages,
+        error="", byte_count=data["byte_count"],
     )
 
 
@@ -123,16 +128,22 @@ EXAMPLES = [
     "What global policies exist for audit trails and user management?",
 ]
 
+def _set_example(text: str) -> None:
+    # on_click callbacks run before the rerun, so this is the legal way to
+    # set a keyed widget's value from another widget.
+    st.session_state["question_box"] = text
+
+
 question = st.text_area(
     "Your Chromeleon question",
     placeholder="e.g. What does the manual say about audit trail policies?",
     height=90,
+    key="question_box",
 )
 cols = st.columns(len(EXAMPLES))
 for col, example in zip(cols, EXAMPLES):
-    if col.button(example, use_container_width=True):
-        st.session_state["question_preset"] = example
-        question = example
+    col.button(example, use_container_width=True,
+               on_click=_set_example, args=(example,))
 
 if st.button("Ask from the manuals", type="primary"):
     if not question.strip():

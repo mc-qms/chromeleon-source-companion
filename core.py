@@ -58,7 +58,7 @@ SOURCES: tuple[Source, ...] = (
         revision="Rev. 2.2 (Nov 15, 2021)",
         kind="installation_guide",
         version_scope="Chromeleon 7 standalone stations",
-        versions=("7.2", "7.3.2", "7.4"),
+        versions=("7.2", "7.3.2"),
         use_for=(
             "Installing or updating Chromeleon 7 on a standalone computer; "
             "hardware, operating-system and licensing requirements; configuring "
@@ -426,8 +426,12 @@ def _score_chunk(chunk: Chunk, q_tokens: Counter, question: str,
     text = chunk.text.lower()
     counts = Counter(tokenize(chunk.text))
     score = sum(min(counts[t], 3) for t in q_tokens)
+    q_set = set(q_tokens)
     for kw in source.keywords:
-        if " " in kw and kw in text:
+        # The keyword bonus only counts when the question is actually about
+        # that keyword — a question-independent bonus inflates every chunk
+        # and defeats the weak-support tripwire in build_packet.
+        if " " in kw and kw in text and set(tokenize(kw)) & q_set:
             score += 4
     dots = text.count("...")
     if dots > 3 or "table of contents" in text:
@@ -562,7 +566,8 @@ def extractive_answer(packet: Packet) -> str:
 
 def validate_answer(answer: str, packet: Packet) -> list[str]:
     warnings: list[str] = []
-    cited = set(re.findall(r"\[(S\d+)(?:\s*p\.\s*\d+)?\]", answer))
+    cited = set(re.findall(
+        r"\[\s*(S\d+)\s*(?:,?\s*(?:p\.?|page)\s*\d+)?\s*\]", answer))
     known = set(packet.source_labels.values())
     if packet.items and not cited:
         warnings.append("Answer cites no packet sources.")
