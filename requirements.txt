@@ -1,0 +1,5 @@
+streamlit>=1.37
+requests>=2.32
+pypdf>=4.2
+cryptography>=42
+beautifulsoup4>=4.12
