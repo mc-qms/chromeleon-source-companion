@@ -94,7 +94,7 @@ st.caption(
 )
 
 api_key = get_secret("OPENROUTER_API_KEY")
-model_name = get_secret("MODEL_NAME", "meta-llama/llama-3.3-70b-instruct")
+model_name = get_secret("MODEL_NAME", "openai/gpt-6-luna")
 system_prompt = get_secret("COMPANION_SYSTEM_PROMPT") or BASE_SYSTEM_PROMPT
 
 with st.sidebar:
