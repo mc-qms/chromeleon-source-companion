@@ -36,7 +36,7 @@ class Source:
     title: str
     doc_ref: str
     revision: str
-    kind: str  # installation_guide | functional_spec | qualification | online_help
+    kind: str  # installation_guide | functional_spec | qualification | online_help | technical_note
     version_scope: str
     versions: tuple[str, ...]
     use_for: str
@@ -112,6 +112,44 @@ SOURCES: tuple[Source, ...] = (
             "privileges", "roles", "processing method", "report template",
             "versioning", "data vault", "sequence", "injection query",
             "services manager", "instrument configuration",
+            "formula", "custom formula", "peak group", "relative area",
+            "report variable", "summed", "grouparea", "rel_area",
+        ),
+    ),
+    Source(
+        id="tn_report_formulas",
+        title=(
+            "TN 000670: Automatic Calibration Curve Selection in Ion "
+            "Chromatography with Chromeleon 7 CDS"
+        ),
+        doc_ref="TN 000670",
+        revision="Technical Note 000670",
+        kind="technical_note",
+        version_scope="Chromeleon 7.2 or above",
+        versions=("7.2", "7.3.2", "7.4"),
+        use_for=(
+            "User-defined spreadsheet formulas in Chromeleon report "
+            "templates: Excel-style formula entry and syntax, formula "
+            "functions (SUM, MAX, COUNTIF, INDIRECT, ADDRESS), and a "
+            "worked example that selects a calibration curve by comparing "
+            "peak areas inside the report."
+        ),
+        not_for=(
+            "Peak report variables and processing-method behavior — those "
+            "are specified in the Functional Specifications and the "
+            "Online Help; instrument qualification."
+        ),
+        audience="Operator / report designer",
+        fetch_url=(
+            "https://documents.thermofisher.com/TFS-Assets/CMD/"
+            "Technical-Notes/tn-000670-ic-chromeleon-automatic-calibration"
+            "-curve-selection-tn000670-na-en.pdf"
+        ),
+        fetch_kind="pdf",
+        keywords=(
+            "formula", "formulas", "custom formula", "spreadsheet",
+            "report designer", "calculation", "calculate", "sum", "max",
+            "countif", "calibration curve selection", "excel",
         ),
     ),
     Source(
@@ -191,6 +229,7 @@ TASK_LABELS = (
     "General question",
     "Install / upgrade / configure",
     "How-to / operation",
+    "Compose a formula / calculation",
     "Audit trail / data integrity",
     "Qualification (OQ/PQ)",
     "Troubleshooting",
@@ -199,6 +238,10 @@ TASK_LABELS = (
 TASK_BOOST: dict[str, dict[str, int]] = {
     "Install / upgrade / configure": {"install_guide": 14, "functional_spec_732": 3},
     "How-to / operation": {"online_help_732": 12, "functional_spec_732": 5},
+    "Compose a formula / calculation": {
+        "functional_spec_732": 14, "tn_report_formulas": 12,
+        "online_help_732": 5,
+    },
     "Audit trail / data integrity": {"functional_spec_732": 14},
     "Qualification (OQ/PQ)": {"oq_pq_hplc": 14, "functional_spec_732": 3},
     "Troubleshooting": {"online_help_732": 6, "functional_spec_732": 5, "install_guide": 4},
@@ -393,6 +436,7 @@ class Packet:
     question: str
     task: str
     version: str
+    mode: str = "answer"
     selected: list[ScoredSource] = field(default_factory=list)
     fetch_results: list[FetchResult] = field(default_factory=list)
     items: list[Chunk] = field(default_factory=list)
@@ -422,10 +466,16 @@ def _chunk_page(source_id: str, label: str, page: PageText,
 
 
 def _score_chunk(chunk: Chunk, q_tokens: Counter, question: str,
-                 source: Source) -> int:
+                 source: Source, compose: bool = False) -> int:
     text = chunk.text.lower()
     counts = Counter(tokenize(chunk.text))
     score = sum(min(counts[t], 3) for t in q_tokens)
+    if compose:
+        # Compose questions are answered from documented variables and
+        # functions, so chunks dense in dotted variable names (peak.area,
+        # peak.groupArea, chm.* ...) are the useful substrate.
+        dotted = len(re.findall(r"[a-z]+\.[a-z_]+", text))
+        score += min(dotted, 6)
     q_set = set(q_tokens)
     for kw in source.keywords:
         # The keyword bonus only counts when the question is actually about
@@ -457,8 +507,20 @@ def build_packet(
     char_cap: int = 18000,
     max_pages: Optional[int] = None,
     page_provider: Callable[[Source, Optional[int]], FetchResult] = fetch_source,
+    mode: str = "answer",
 ) -> Packet:
-    packet = Packet(question=question, task=task, version=version)
+    packet = Packet(question=question, task=task, version=version, mode=mode)
+    if mode == "compose":
+        # A drafted formula needs more substrate than a lookup answer:
+        # variable definitions are spread across dense reference pages.
+        per_source_chunks = max(per_source_chunks, 6)
+        char_cap = max(char_cap, 26000)
+        packet.gaps.append(
+            "Compose mode: the answer drafts new combinations from "
+            "documented building blocks. A combination is a draft, not a "
+            "quotation from a manual, and anything the packet does not "
+            "document stays flagged as unverified."
+        )
     packet.selected = select_sources(question, task, version, max_sources)
     for idx, ss in enumerate(packet.selected, start=1):
         packet.source_labels[ss.source.id] = f"S{idx}"
@@ -490,7 +552,8 @@ def build_packet(
         for page in result.pages:
             chunks.extend(_chunk_page(source.id, label, page))
         for ch in chunks:
-            ch.score = _score_chunk(ch, q_tokens, question, source)
+            ch.score = _score_chunk(
+                ch, q_tokens, question, source, compose=(mode == "compose"))
         chunks.sort(key=lambda c: c.score, reverse=True)
         all_chunks.extend(chunks[:per_source_chunks])
 
@@ -520,6 +583,14 @@ def packet_to_prompt(packet: Packet) -> str:
         f"Question: {packet.question}",
         f"Task type: {packet.task}",
         f"Chromeleon version selected by user: {packet.version}",
+    ]
+    if packet.mode == "compose":
+        lines.append(
+            "MODE: COMPOSE — the user asked for a drafted solution (for "
+            "example a formula) assembled from the documented building "
+            "blocks in this packet, not a summary of the packet."
+        )
+    lines += [
         "",
         "SOURCE PACKET (the only evidence you may use):",
     ]

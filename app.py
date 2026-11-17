@@ -27,6 +27,27 @@ BASE_SYSTEM_PROMPT = (
     "for that, decline that part and say what the sources do support."
 )
 
+COMPOSE_SYSTEM_PROMPT = (
+    "You are the Chromeleon Source Companion in COMPOSE mode. The user "
+    "wants a practical drafted solution — typically a formula or "
+    "calculation — built from the Chromeleon variables and functions "
+    "documented in the source packet. Rules: (1) Build only from building "
+    "blocks that appear in the packet, and cite each documented block "
+    "with its packet label and page, like [S1 p. 12]. (2) Give the "
+    "recommended option first, with concrete steps and the formula in a "
+    "code block. (3) The combination you assemble is a draft, not a "
+    "quotation from a manual — say so. (4) If a step needs syntax or "
+    "parameter values the packet does not document, do NOT invent them: "
+    "name the dialog or setting where the user picks them and flag that "
+    "element as unverified. (5) Flag limits and failure modes the packet "
+    "supports, for example a variable that only evaluates in a specific "
+    "report table. (6) You may name an alternative the packet does not "
+    "document only if you mark it clearly as unverified and not sourced "
+    "from the packet; never present its syntax as established. (7) End "
+    "with the gaps. Do not advise bypassing audit trails, electronic "
+    "signatures, access controls, or other data-integrity controls."
+)
+
 
 def get_secret(name: str, default: str = "") -> str:
     try:
@@ -99,6 +120,16 @@ system_prompt = get_secret("COMPANION_SYSTEM_PROMPT") or BASE_SYSTEM_PROMPT
 
 with st.sidebar:
     st.header("Question context")
+    mode_label = st.radio(
+        "Mode",
+        ["Answer from the manuals", "Compose a solution (draft)"],
+        help=(
+            "Answer mode reports what the manuals say. Compose mode "
+            "drafts a solution (e.g. a formula) from the documented "
+            "variables in the packet and flags anything unverified."
+        ),
+    )
+    mode = "compose" if mode_label.startswith("Compose") else "answer"
     version = st.selectbox("Chromeleon version", ["Unknown", "7.2", "7.3.2", "7.4"])
     task = st.selectbox("Task type", list(core.TASK_LABELS))
     max_sources = st.slider("Max sources in packet", 1, 4, 3)
@@ -126,6 +157,8 @@ EXAMPLES = [
     "How do I run Installation Qualification after installing Chromeleon 7?",
     "How are OQ/PQ sequences created and run for HPLC instruments?",
     "What global policies exist for audit trails and user management?",
+    "Make me a custom formula for identified peaks LC1 to LC8: summed "
+    "peak area, and relative peak area for each peak",
 ]
 
 def _set_example(text: str) -> None:
@@ -145,7 +178,8 @@ for col, example in zip(cols, EXAMPLES):
     col.button(example, use_container_width=True,
                on_click=_set_example, args=(example,))
 
-if st.button("Ask from the manuals", type="primary"):
+if st.button("Compose draft" if mode == "compose" else "Ask from the manuals",
+             type="primary"):
     if not question.strip():
         st.error("Type a question first.")
     else:
@@ -157,13 +191,20 @@ if st.button("Ask from the manuals", type="primary"):
                 max_sources=max_sources,
                 max_pages=None if full_fetch else 60,
                 page_provider=app_page_provider,
+                mode=mode,
             )
         st.session_state["packet"] = packet
+        st.session_state["mode"] = mode
         if api_key:
+            active_prompt = system_prompt
+            if mode == "compose":
+                active_prompt = (
+                    get_secret("COMPOSE_SYSTEM_PROMPT") or COMPOSE_SYSTEM_PROMPT
+                )
             with st.spinner("Writing the answer from the packet…"):
                 try:
                     answer = call_openrouter(
-                        api_key, model_name, system_prompt,
+                        api_key, model_name, active_prompt,
                         core.packet_to_prompt(packet),
                     )
                 except Exception as exc:
@@ -180,6 +221,12 @@ if st.button("Ask from the manuals", type="primary"):
 packet = st.session_state.get("packet")
 if packet is not None:
     st.subheader("Answer")
+    if st.session_state.get("mode") == "compose":
+        st.info(
+            "Compose mode: this is a drafted solution assembled from the "
+            "documented variables in the packet below — not a quotation "
+            "from a manual. Verify it in your environment before use."
+        )
     st.markdown(st.session_state.get("answer", ""))
     for warning in st.session_state.get("warnings", []):
         st.warning(warning)
@@ -223,7 +270,7 @@ with st.expander("Source registry — this is for this, that is for that"):
                 "Scope": s.version_scope,
                 "Use for": s.use_for,
                 "Not for": s.not_for,
-                "Fetch": "live" if s.fetchable else "catalog only (v1)",
+                "Fetch": "live" if s.fetchable else "catalog only",
             }
             for s in core.SOURCES
         ],

@@ -18,6 +18,8 @@ def fake_provider(source, max_pages=None):
         "functional_spec_732": "Electronic signatures: submit, review and "
         "approve signatures on sequences. The data audit trail records "
         "changes with user, date and reason.",
+        "tn_report_formulas": "Report spreadsheets accept Excel-style "
+        "formulas. Formula functions include SUM, MAX and COUNTIF.",
         "oq_pq_hplc": "Use the Instrument Qualification Wizard to create "
         "and run OQ/PQ sequences from the supplied templates.",
         "online_help_732": "How to create a sequence: click New, then "
@@ -122,6 +124,69 @@ def test_install_guide_not_claimed_for_74():
                for g in packet.gaps), packet.gaps
 
 
+LC_QUESTION = (
+    "Make me a custom formula for a series of identified peaks known as "
+    "LC1 - LC8: summed peak area, and another for relative peak area"
+)
+
+
+def test_compose_task_picks_spec_and_tn():
+    chosen = core.select_sources(
+        LC_QUESTION, "Compose a formula / calculation", "7.3.2")
+    ids = [ss.source.id for ss in chosen]
+    assert ids[0] == "functional_spec_732", ids
+    assert "tn_report_formulas" in ids, ids
+
+
+def compose_provider(source, max_pages=None):
+    # The functional-spec fixture carries the documented group-variable
+    # lines (PDF pp. 319-320 of the real spec) among filler pages, so the
+    # acceptance test proves the packet surfaces them in compose mode.
+    if source.id == "functional_spec_732":
+        pages = [
+            core.PageText(page=10, text=(
+                "Administration console. Global policies for user "
+                "management, privileges and roles.")),
+            core.PageText(page=319, text=(
+                "peak.area peak.groupArea Returns the area of the peak "
+                "group, i.e. the sum of all area values of all peaks "
+                "which belong to the peak group. peak.rel_area Returns "
+                "the relative amount where the groupArea is the "
+                "nominator relative value. For 'All peaks of the same "
+                "group' the values of all peaks which belong to the "
+                "same peak group are added together.")),
+            core.PageText(page=320, text=(
+                "peak.groupHeight peak.rel_area peak.rel_height Similar "
+                "to the relative peak formulas but now using the single "
+                "peak area values as the nominator.")),
+        ]
+        return core.FetchResult(source=source, ok=True, pages=pages,
+                                byte_count=100)
+    return fake_provider(source, max_pages)
+
+
+def test_compose_packet_surfaces_group_variables():
+    packet = core.build_packet(
+        LC_QUESTION, "Compose a formula / calculation", "7.3.2",
+        page_provider=compose_provider, mode="compose")
+    assert packet.mode == "compose"
+    texts = [item.text for item in packet.items]
+    assert any("groupArea" in t for t in texts), texts
+    assert any("rel_area" in t for t in texts), texts
+    assert any("Compose mode" in g for g in packet.gaps), packet.gaps
+    prompt = core.packet_to_prompt(packet)
+    assert "MODE: COMPOSE" in prompt
+
+
+def test_answer_mode_has_no_compose_markers():
+    packet = core.build_packet(
+        LC_QUESTION, "General question", "7.3.2",
+        page_provider=compose_provider)
+    assert packet.mode == "answer"
+    assert "MODE: COMPOSE" not in core.packet_to_prompt(packet)
+    assert not any("Compose mode" in g for g in packet.gaps)
+
+
 if __name__ == "__main__":
     test_install_question_picks_install_guide()
     test_audit_question_picks_functional_spec()
@@ -132,4 +197,7 @@ if __name__ == "__main__":
     test_gibberish_gets_weak_support_gap()
     test_citation_comma_style_is_accepted()
     test_install_guide_not_claimed_for_74()
+    test_compose_task_picks_spec_and_tn()
+    test_compose_packet_surfaces_group_variables()
+    test_answer_mode_has_no_compose_markers()
     print("all core tests passed")
