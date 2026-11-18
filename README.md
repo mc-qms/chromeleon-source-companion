@@ -1,6 +1,6 @@
 # Chromeleon Source Companion
 
-Governed Chromeleon 7 manual companion — source-registry driven, fetches manuals on demand, answers with citations, and flags gaps instead of guessing.
+Governed Chromeleon 7 companion — source-registry driven, fetches manuals on demand, answers with citations, drafts formulas from documented variables, and flags gaps instead of guessing.
 
 ## Why this exists
 

@@ -111,11 +111,12 @@ def call_openrouter(api_key: str, model: str, system_prompt: str, user_prompt: s
 
 st.title("Chromeleon Source Companion")
 st.caption(
-    "Governed Chromeleon 7 manual companion — source-registry driven, "
-    "fetches manuals on demand, answers with citations, and flags gaps "
-    "instead of guessing. This app hosts no manuals; content is fetched "
-    "live from Thermo Fisher Knowledge. Verify critical steps in the "
-    "current manual before acting."
+    "Governed Chromeleon 7 companion — source-registry driven, "
+    "fetches manuals on demand, answers with citations, drafts formulas "
+    "from documented variables, and flags gaps instead of guessing. "
+    "This app hosts no manuals; content is fetched live from "
+    "Thermo Fisher. Verify critical steps in the current manual "
+    "before acting."
 )
 
 api_key = get_secret("OPENROUTER_API_KEY")
@@ -153,7 +154,10 @@ with st.sidebar:
         "1. The registry decides which manual is for what.\n"
         "2. Python fetches only the selected sources, live.\n"
         "3. The model answers from that packet, with citations.\n"
-        "4. Anything the packet doesn't support is flagged as a gap."
+        "4. Anything the packet doesn't support is flagged as a gap.\n"
+        "5. In Compose mode, the model drafts solutions (e.g. formulas) "
+        "from the packet's documented variables, flagging anything "
+        "unverified."
     )
 
 EXAMPLES = [
